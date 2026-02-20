@@ -20,7 +20,6 @@ import {
   type Product,
 } from "@/lib/api";
 import { fetchCsvProducts, fetchProductById } from "@/lib/csv-products";
-import { fetchSitemapProducts, getSitemapProductById } from "@/lib/sitemap-parser";
 import { getAdminSettings } from "@/lib/store";
 import { addRecentlyViewed } from "@/lib/wishlist";
 import { extractIdFromSlug } from "@/lib/slug";
@@ -46,37 +45,30 @@ export default function ProductDetail() {
   }, [id]);
 
   useEffect(() => {
-    if (!id || (product && product.product_id === id)) return;
+    if (!id) return;
+    
+    // If we already have the correct product, don't reload
+    if (product && product.product_id === id) {
+      setLoading(false);
+      return;
+    }
 
     const loadProduct = async () => {
       setLoading(true);
       let found: Product | null = null;
 
       try {
-        // 1. ลองดึงจาก CSV Global Search (High Priority for Mass Site)
-        if (settings.dataSource === "csv") {
-          found = await fetchProductById(id);
-        }
+        // 1. Try CSV Global Search (High Priority for Mass Site)
+        found = await fetchProductById(id);
 
-        // 2. ลองดึงจาก Sitemap Cache
-        if (!found && settings.dataSource === "sitemap") {
-          found = getSitemapProductById(id, slug);
-        }
-
-        // 3. ถ้ายังไม่เจอ ลองดึงจาก Cache ทั่วไป
+        // 2. Try General Cache
         if (!found) {
           found = getCachedProduct(id);
         }
 
-        // 4. ถ้ายังไม่เจออีก ให้ดึงจากแหล่งข้อมูลจริง
+        // 3. Try fetching from data source
         if (!found) {
-          const getFetchFn = () => {
-            if (settings.dataSource === "sitemap") return fetchSitemapProducts({ limit: 1000 });
-            if (settings.dataSource === "csv") return fetchCsvProducts({ limit: 100, page: 1 });
-            return fetchProducts({ limit: 100, page: 1 });
-          };
-
-          const res = await getFetchFn();
+          const res = await fetchCsvProducts({ limit: 1000, page: 1 });
           found = res.data.find((p) => p.product_id === id) || null;
         }
 
@@ -90,7 +82,7 @@ export default function ProductDetail() {
     };
 
     loadProduct();
-  }, [id, slug, settings.dataSource]);
+  }, [id, settings.dataSource]);
 
   if (loading) {
     return (
@@ -268,8 +260,6 @@ export default function ProductDetail() {
 
         <RelatedProducts currentProductId={product.product_id} categoryName={product.category_name} />
       </main>
-      
-      <FakePurchasePopup products={[product]} />
     </div>
   );
 }

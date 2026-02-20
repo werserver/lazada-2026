@@ -4,27 +4,6 @@ import { getAdminSettings, getCsvData } from "@/lib/store";
 import config from "@/lib/config";
 import { buildCloakedUrl } from "./url-builder";
 
-interface ShopeeRow {
-  id: string;
-  url: string;
-  name: string;
-  price: string;
-  price_min: string;
-  original_price: string;
-  discount: string;
-  shop_name: string;
-  shop_location: string;
-  rating: string;
-  rating_count: string;
-  sold_count: string;
-  sold_count_text: string;
-  image: string;
-  images: string;
-  category: string;
-  shopid: string;
-  variations: string;
-}
-
 let cachedProducts: Product[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
@@ -75,13 +54,15 @@ async function loadCsvProducts(): Promise<Product[]> {
   const allProducts: Product[] = [];
 
   // 1. Load category-specific CSVs (High Priority)
-  for (const [catName, csvText] of Object.entries(settings.categoryCsvMap)) {
-    if (csvText) {
-      try {
-        const products = await parseCsv(csvText, catName);
-        allProducts.push(...products);
-      } catch (e) {
-        console.error(`Failed to parse CSV for category: ${catName}`, e);
+  if (settings.categoryCsvMap) {
+    for (const [catName, csvText] of Object.entries(settings.categoryCsvMap)) {
+      if (csvText) {
+        try {
+          const products = await parseCsv(csvText, catName);
+          allProducts.push(...products);
+        } catch (e) {
+          console.error(`Failed to parse CSV for category: ${catName}`, e);
+        }
       }
     }
   }
@@ -174,8 +155,11 @@ export async function fetchCsvProducts(params: {
 }
 
 export async function fetchProductById(id: string): Promise<Product | null> {
+  // Clear cache to ensure we get the latest from localStorage
+  clearCsvCache();
   const allProducts = await loadCsvProducts();
-  return allProducts.find(p => p.product_id === id) || null;
+  const found = allProducts.find(p => p.product_id === id);
+  return found || null;
 }
 
 export function clearCsvCache() {
