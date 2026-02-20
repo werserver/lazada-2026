@@ -1,0 +1,7 @@
+project_id = "mswztzqwwqvketdvtdya"
+
+[functions.fetch-products]
+verify_jwt = false
+
+[functions.fetch-conversions]
+verify_jwt = false
