@@ -17,7 +17,7 @@ export interface AdminSettings {
   defaultCurrency: string;
   csvFileName: string;
   cloakingBaseUrl: string;
-  cloakingToken?: string;
+  cloakingToken: string;
   siteName: string;
   faviconUrl: string;
   sitemapUrl: string;
@@ -35,7 +35,7 @@ const DEFAULT_PREFIXES = [
 
 function getDefaults(): AdminSettings {
   return {
-    dataSource: config.dataSource,
+    dataSource: "sitemap",
     apiToken: "",
     categories: [...config.categories],
     keywords: [...config.keywords],
@@ -46,11 +46,11 @@ function getDefaults(): AdminSettings {
     enablePrefixWords: true,
     defaultCurrency: config.defaultCurrency,
     csvFileName: "",
-    cloakingBaseUrl: "",
-    cloakingToken: "",
+    cloakingBaseUrl: "https://goeco.mobi/?token=QlpXZyCqMylKUjZiYchwB",
+    cloakingToken: "QlpXZyCqMylKUjZiYchwB",
     siteName: "Lazada 2026",
-    faviconUrl: "/favicon.ico",
-    sitemapUrl: "",
+    faviconUrl: "https://www.lazada.co.th/favicon.ico",
+    sitemapUrl: "https://www.lazada.co.th/sitemap-products-order-last-30days-morethan0-1.xml.gz",
     categoryCsvMap: {},
     categoryCsvFileNames: {},
   };

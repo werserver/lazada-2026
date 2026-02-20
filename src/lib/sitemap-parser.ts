@@ -3,11 +3,48 @@ import { getAdminSettings } from "@/lib/store";
 import { buildCloakedUrl } from "./url-builder";
 
 /**
- * Sitemap Parser (Lazada Optimized v2 - Smart Indexing & Deep Link Support)
+ * Sitemap Parser (Lazada Optimized v3 - Server-Side Simulation & Persistent Cache)
  */
 
-const SITEMAP_CACHE_KEY = "lazada-sitemap-cache-v2";
-const SITEMAP_URL_KEY = "lazada-sitemap-url-v2";
+const SITEMAP_CACHE_KEY = "lazada-sitemap-cache-v3";
+const SITEMAP_URL_KEY = "lazada-sitemap-url-v3";
+
+// ฟังก์ชันสำหรับดึงข้อมูลและเก็บลง Cache (เรียกใช้เมื่อกดบันทึกใน Admin หรือเมื่อไม่มีข้อมูล)
+export async function refreshSitemapCache(url: string): Promise<void> {
+  if (!url) return;
+  
+  try {
+    // ใช้ Proxy ดึงข้อมูล (ในระบบจริงส่วนนี้ควรทำที่ Server-side)
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl);
+    if (!response.ok) throw new Error("Network response was not ok");
+    
+    const json = await response.json();
+    const xmlText = json.contents;
+    
+    if (!xmlText) throw new Error("No content from proxy");
+
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+    const locs = Array.from(xmlDoc.getElementsByTagName("loc"));
+
+    if (locs.length > 0) {
+      const settings = getAdminSettings();
+      // ดึง 1000 รายการเพื่อความครอบคลุม
+      const products = locs.slice(0, 1000).map((locNode, index) => 
+        createProductFromLoc(locNode.textContent || "", index, settings)
+      );
+      
+      // บันทึกลง Cache (ใช้ระบบที่เสถียรกว่า LocalStorage ถ้าเป็นไปได้ แต่ในที่นี้ใช้ LocalStorage เป็นตัวแทน)
+      localStorage.setItem(SITEMAP_CACHE_KEY, JSON.stringify(products));
+      localStorage.setItem(SITEMAP_URL_KEY, url);
+      console.log(`Sitemap cached: ${products.length} products`);
+    }
+  } catch (error) {
+    console.error("Failed to refresh sitemap cache:", error);
+    throw error;
+  }
+}
 
 export async function fetchSitemapProducts(params: {
   keyword?: string;
@@ -23,7 +60,7 @@ export async function fetchSitemapProducts(params: {
 
   let products: Product[] = [];
   
-  // 1. ลองดึงจาก Cache ก่อน
+  // 1. ดึงจาก Cache ทันที (Instant Load)
   const cachedData = localStorage.getItem(SITEMAP_CACHE_KEY);
   const cachedUrl = localStorage.getItem(SITEMAP_URL_KEY);
   
@@ -35,43 +72,12 @@ export async function fetchSitemapProducts(params: {
     }
   }
 
-  // 2. ถ้าไม่มี Cache หรือ URL เปลี่ยน ให้ดึงใหม่ (ใช้ Smart Indexing ดึงเฉพาะส่วนแรกก่อน)
+  // 2. ถ้าไม่มี Cache ให้ดึงใหม่ในพื้นหลัง (Background Fetch)
   if (products.length === 0) {
-    try {
-      // ใช้ Proxy ดึงข้อมูล
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(sitemapUrl)}`;
-      const response = await fetch(proxyUrl);
-      if (!response.ok) throw new Error("Network response was not ok");
-      
-      const json = await response.json();
-      const xmlText = json.contents;
-      
-      if (!xmlText) throw new Error("No content from proxy");
-
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-      const locs = Array.from(xmlDoc.getElementsByTagName("loc"));
-
-      if (locs.length > 0) {
-        // ดึงเฉพาะ 500 รายการแรกเพื่อความรวดเร็ว (Smart Indexing)
-        const limitedLocs = locs.slice(0, 500);
-        products = limitedLocs.map((locNode, index) => createProductFromLoc(locNode.textContent || "", index, settings));
-        
-        // บันทึกลง Cache
-        try {
-          localStorage.setItem(SITEMAP_CACHE_KEY, JSON.stringify(products));
-          localStorage.setItem(SITEMAP_URL_KEY, sitemapUrl);
-        } catch (e) {
-          console.warn("LocalStorage full, saving fewer items");
-          localStorage.setItem(SITEMAP_CACHE_KEY, JSON.stringify(products.slice(0, 200)));
-        }
-      }
-    } catch (error) {
-      console.error("Sitemap fetch error:", error);
-      if (products.length === 0) {
-        products = generateMockLazadaProducts(settings);
-      }
-    }
+    // แสดง Mock ไปก่อนเพื่อให้หน้าเว็บไม่ว่าง
+    products = generateMockLazadaProducts(settings);
+    // ดึงข้อมูลจริงมาเก็บไว้ใช้ครั้งหน้า
+    refreshSitemapCache(sitemapUrl).catch(console.error);
   }
 
   // 3. กรองข้อมูลตาม Keyword
@@ -93,28 +99,21 @@ export async function fetchSitemapProducts(params: {
   };
 }
 
-/**
- * ดึงข้อมูลสินค้าตัวเดียว (Deep Link Support)
- * ถ้าไม่มีใน Cache จะสร้างข้อมูลเบื้องต้นจาก ID/Slug ทันที
- */
 export function getSitemapProductById(id: string, slug?: string): Product | null {
   const cachedData = localStorage.getItem(SITEMAP_CACHE_KEY);
-  let products: Product[] = [];
-  
   if (cachedData) {
     try {
-      products = JSON.parse(cachedData);
+      const products: Product[] = JSON.parse(cachedData);
       const found = products.find(p => p.product_id === id);
       if (found) return found;
     } catch {}
   }
 
-  // ถ้าไม่เจอใน Cache ให้สร้างข้อมูลเบื้องต้นจาก Slug (Deep Link)
+  // ถ้าไม่เจอใน Cache ให้สร้างข้อมูลจาก Slug ทันที (Deep Link)
   if (slug) {
     const settings = getAdminSettings();
-    // ถอดรหัสชื่อจาก Slug (รูปแบบ: {id}-{name}.html)
     let name = slug.split('-').slice(1).join(' ').replace(/\.html$/, '');
-    if (!name || name === "product") name = "กำลังโหลดข้อมูลสินค้า...";
+    if (!name || name === "product") name = "สินค้าจาก Lazada";
     
     const originalUrl = `https://www.lazada.co.th/products/${slug}`;
     
@@ -123,9 +122,9 @@ export function getSitemapProductById(id: string, slug?: string): Product | null
       product_name: decodeURIComponent(name),
       product_picture: `https://picsum.photos/seed/${id}/600/600`,
       product_other_pictures: "",
-      product_price: 0,
-      product_discounted: 0,
-      product_discounted_percentage: 0,
+      product_price: 1590, // Default price for deep links
+      product_discounted: 1290,
+      product_discounted_percentage: 19,
       product_currency: "THB",
       product_link: originalUrl,
       tracking_link: buildCloakedUrl(settings.cloakingToken, originalUrl, settings.cloakingBaseUrl),
@@ -155,8 +154,8 @@ function createProductFromLoc(loc: string, index: number, settings: any): Produc
     product_name: name,
     product_picture: `https://picsum.photos/seed/${id}/400/400`,
     product_other_pictures: "",
-    product_price: 1290,
-    product_discounted: 890,
+    product_price: 1290 + (index % 10 * 100),
+    product_discounted: 890 + (index % 10 * 50),
     product_discounted_percentage: 31,
     product_currency: "THB",
     product_link: loc,

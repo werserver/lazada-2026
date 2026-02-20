@@ -6,21 +6,21 @@
 export const buildCloakedUrl = (token: string | undefined, productUrl: string, customBaseUrl?: string): string => {
   if (!productUrl) return "";
   
-  // If we have a custom base URL (full URL with token), use it
+  // 1. ถ้ามี Custom Base URL (เช่น https://goeco.mobi/?token=...) ให้ใช้ตัวนั้นเป็นหลัก
   if (customBaseUrl && customBaseUrl.includes('?token=')) {
     const encodedUrl = encodeURIComponent(productUrl);
-    // Ensure we don't double append &url=
+    // ลบส่วน &url= เดิมออกถ้ามี เพื่อป้องกันการซ้อนทับ
     const base = customBaseUrl.split('&url=')[0];
-    return `${base}&url=${encodedUrl}&source=api_product`;
+    return `${base}&url=${encodedUrl}&source=lazada_2026`;
   }
 
-  // If we only have a token, use the default goeco.mobi base
+  // 2. ถ้ามีแค่ Token ให้ใช้ Default Base URL ของ goeco.mobi
   if (token) {
     const baseUrl = 'https://goeco.mobi/?token=';
     const encodedUrl = encodeURIComponent(productUrl);
-    return `${baseUrl}${token}&url=${encodedUrl}&source=api_product`;
+    return `${baseUrl}${token}&url=${encodedUrl}&source=lazada_2026`;
   }
 
-  // Fallback to original URL if no cloaking info provided
+  // 3. Fallback: ถ้าไม่มีข้อมูล Cloaking เลย ให้ส่ง URL เดิมกลับไป
   return productUrl;
 };

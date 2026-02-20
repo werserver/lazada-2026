@@ -5,6 +5,7 @@ import { AdminLogin } from "@/components/AdminLogin";
 import { isAdminLoggedIn, logoutAdmin, getUsername } from "@/lib/auth";
 import { getAdminSettings, saveAdminSettings, saveCsvData, type AdminSettings } from "@/lib/store";
 import { clearCsvCache } from "@/lib/csv-products";
+import { refreshSitemapCache } from "@/lib/sitemap-parser";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,10 +92,23 @@ function SettingsTab() {
     setSettings((prev) => ({ ...prev, ...partial }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     saveAdminSettings(settings);
     clearCsvCache();
-    toast.success("บันทึกการตั้งค่าเรียบร้อย!");
+    
+    // ถ้าใช้ Sitemap ให้ทำการ Refresh Cache ทันที
+    if (settings.dataSource === "sitemap" && settings.sitemapUrl) {
+      toast.info("กำลังดึงข้อมูลจาก Sitemap...");
+      try {
+        await refreshSitemapCache(settings.sitemapUrl);
+        toast.success("ดึงข้อมูล Sitemap เรียบร้อย!");
+      } catch (err) {
+        toast.error("ไม่สามารถดึงข้อมูลจาก Sitemap ได้");
+      }
+    } else {
+      toast.success("บันทึกการตั้งค่าเรียบร้อย!");
+    }
+    
     // Force reload to apply site name/favicon changes
     setTimeout(() => window.location.reload(), 1000);
   };
