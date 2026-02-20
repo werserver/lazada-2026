@@ -29,7 +29,7 @@ let cachedProducts: Product[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
 
-function mapRowToProduct(row: ShopeeRow, categoryOverride?: string): Product {
+function mapRowToProduct(row: any, categoryOverride?: string): Product {
   const settings = getAdminSettings();
   const originalPrice = parseFloat(row.original_price) || parseFloat(row.price) || 0;
   const currentPrice = parseFloat(row.price_min) || parseFloat(row.price) || 0;
@@ -39,8 +39,8 @@ function mapRowToProduct(row: ShopeeRow, categoryOverride?: string): Product {
 
   const images = (row.images || "")
     .split("\n")
-    .map((s) => s.trim())
-    .filter((s) => s.startsWith("http"));
+    .map((s: string) => s.trim())
+    .filter((s: string) => s.startsWith("http"));
 
   const productUrl = row.url || "";
   
@@ -48,18 +48,18 @@ function mapRowToProduct(row: ShopeeRow, categoryOverride?: string): Product {
   const trackingLink = buildCloakedUrl(settings.cloakingToken, productUrl, settings.cloakingBaseUrl);
 
   return {
-    product_id: String(row.id),
+    product_id: String(row.id || Math.random().toString(36).substr(2, 9)),
     product_name: row.name || "",
     product_picture: row.image || images[0] || "",
     product_other_pictures: images.join(","),
     product_price: originalPrice,
     product_discounted: currentPrice,
     product_discounted_percentage: discountPct,
-    product_currency: settings.defaultCurrency || config.defaultCurrency,
+    product_currency: "THB",
     product_link: productUrl,
     tracking_link: trackingLink,
     category_id: "",
-    category_name: categoryOverride || row.category || "",
+    category_name: categoryOverride || row.category || "ทั่วไป",
     advertiser_id: row.shopid || "",
     shop_id: row.shop_name || "",
     variations: row.variations || "",
@@ -74,40 +74,60 @@ async function loadCsvProducts(): Promise<Product[]> {
   const settings = getAdminSettings();
   const allProducts: Product[] = [];
 
-  // Load category-specific CSVs
+  // 1. Load category-specific CSVs (High Priority)
   for (const [catName, csvText] of Object.entries(settings.categoryCsvMap)) {
     if (csvText) {
-      const products = await parseCsv(csvText, catName);
+      try {
+        const products = await parseCsv(csvText, catName);
+        allProducts.push(...products);
+      } catch (e) {
+        console.error(`Failed to parse CSV for category: ${catName}`, e);
+      }
+    }
+  }
+
+  // 2. Load default CSV (Fallback)
+  let mainCsvText = getCsvData();
+  if (mainCsvText) {
+    try {
+      const products = await parseCsv(mainCsvText);
       allProducts.push(...products);
+    } catch (e) {
+      console.error("Failed to parse main CSV", e);
     }
   }
 
-  // Load default CSV (from localStorage or file) if no category CSVs or as fallback
+  // 3. Load from file if still empty
   if (allProducts.length === 0) {
-    let csvText = getCsvData();
-    if (!csvText) {
+    try {
       const response = await fetch(config.csvFilePath);
-      if (!response.ok) throw new Error("Failed to load CSV file");
-      csvText = await response.text();
+      if (response.ok) {
+        const csvText = await response.text();
+        const products = await parseCsv(csvText);
+        allProducts.push(...products);
+      }
+    } catch (e) {
+      console.warn("No CSV file found at config path");
     }
-    const products = await parseCsv(csvText);
-    allProducts.push(...products);
   }
 
-  cachedProducts = allProducts;
+  // Remove duplicates by ID
+  const uniqueProducts = Array.from(new Map(allProducts.map(p => [p.product_id, p])).values());
+
+  cachedProducts = uniqueProducts;
   cacheTimestamp = Date.now();
-  return allProducts;
+  return uniqueProducts;
 }
 
 function parseCsv(csvText: string, categoryOverride?: string): Promise<Product[]> {
   return new Promise((resolve, reject) => {
-    Papa.parse<ShopeeRow>(csvText, {
+    Papa.parse(csvText, {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
         const products = results.data
-          .filter((row) => row.id && row.name)
-          .map((row) => mapRowToProduct(row, categoryOverride));
+          .filter((row: any) => row.id || row.name)
+          .map((row: any) => mapRowToProduct(row, categoryOverride));
         resolve(products);
       },
       error: (err: Error) => reject(err),
@@ -119,6 +139,7 @@ export async function fetchCsvProducts(params: {
   keyword?: string;
   page?: number;
   limit?: number;
+  category?: string;
 }): Promise<ProductsResponse> {
   const allProducts = await loadCsvProducts();
   const limit = params.limit ?? 20;
@@ -126,6 +147,13 @@ export async function fetchCsvProducts(params: {
 
   let filtered = allProducts;
 
+  // Filter by category if provided
+  if (params.category) {
+    const cat = params.category.toLowerCase();
+    filtered = filtered.filter(p => p.category_name.toLowerCase() === cat);
+  }
+
+  // Filter by keyword
   if (params.keyword) {
     const kw = params.keyword.toLowerCase();
     filtered = filtered.filter(

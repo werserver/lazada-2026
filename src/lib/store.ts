@@ -1,11 +1,11 @@
 // Admin settings — stored in localStorage, with config.ts as defaults
 import config from "@/lib/config";
 
-const SETTINGS_KEY = "aff-shop-settings";
-const CSV_DATA_KEY = "aff-shop-csv-data";
+const SETTINGS_KEY = "aff-shop-settings-v2";
+const CSV_DATA_KEY = "aff-shop-csv-data-v2";
 
 export interface AdminSettings {
-  dataSource: "api" | "csv" | "sitemap";
+  dataSource: "api" | "csv";
   apiToken: string;
   categories: string[];
   keywords: string[];
@@ -20,7 +20,6 @@ export interface AdminSettings {
   cloakingToken: string;
   siteName: string;
   faviconUrl: string;
-  sitemapUrl: string;
   /** Category CSV data: key = category name, value = CSV text */
   categoryCsvMap: Record<string, string>;
   /** Category CSV file names for display */
@@ -35,9 +34,9 @@ const DEFAULT_PREFIXES = [
 
 function getDefaults(): AdminSettings {
   return {
-    dataSource: "sitemap",
+    dataSource: "csv",
     apiToken: "",
-    categories: [...config.categories],
+    categories: ["สินค้าแนะนำ", "มือถือและอุปกรณ์", "เครื่องใช้ไฟฟ้า", "แฟชั่น"],
     keywords: [...config.keywords],
     prefixWords: [...DEFAULT_PREFIXES],
     selectedAdvertisers: [...config.selectedAdvertisers],
@@ -48,9 +47,8 @@ function getDefaults(): AdminSettings {
     csvFileName: "",
     cloakingBaseUrl: "https://goeco.mobi/?token=QlpXZyCqMylKUjZiYchwB",
     cloakingToken: "QlpXZyCqMylKUjZiYchwB",
-    siteName: "Lazada 2026",
+    siteName: "Lazada Deals 2026",
     faviconUrl: "https://www.lazada.co.th/favicon.ico",
-    sitemapUrl: "https://www.lazada.co.th/sitemap-products-order-last-30days-morethan0-1.xml.gz",
     categoryCsvMap: {},
     categoryCsvFileNames: {},
   };
@@ -61,6 +59,8 @@ export function getAdminSettings(): AdminSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const saved = JSON.parse(raw);
+      // Ensure we don't have sitemap in dataSource
+      if (saved.dataSource === "sitemap") saved.dataSource = "csv";
       return { ...getDefaults(), ...saved };
     }
   } catch {}

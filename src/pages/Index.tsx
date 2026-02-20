@@ -15,7 +15,7 @@ import { useProducts } from "@/hooks/useProducts";
 import { getAdminSettings } from "@/lib/store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Tag, ShoppingBag } from "lucide-react";
+import { Tag, ShoppingBag, Sparkles } from "lucide-react";
 
 const Index = () => {
   const settings = getAdminSettings();
@@ -83,13 +83,18 @@ const Index = () => {
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(p);
     }
-    return Object.entries(groups);
+    
+    // Randomize category order for Mass Site uniqueness
+    return Object.entries(groups).sort(() => Math.random() - 0.5);
   }, [filteredProducts, activeKeyword]);
 
   return (
     <div className="min-h-screen bg-background">
       <PriceAlertBanner />
-      <SEOHead />
+      <SEOHead 
+        title={`${settings.siteName} - ดีลเด็ด ราคาโดน ช้อปเลยวันนี้`}
+        description={`รวบรวมสินค้าจาก ${settings.categories.join(", ")} ราคาถูกที่สุด พร้อมส่วนลดพิเศษที่ ${settings.siteName}`}
+      />
       <Header />
 
       <main className="container mx-auto px-4 py-6 space-y-5">
@@ -142,7 +147,7 @@ const Index = () => {
         <FilterBar onPriceRange={handlePriceRange} onSort={setSort} sort={sort} />
 
         {/* Show by category when not searching */}
-        {!activeKeyword && categoryGroups.length > 1 ? (
+        {!activeKeyword && categoryGroups.length > 0 ? (
           <div className="space-y-10">
             {categoryGroups.map(([catName, products]) => (
               <div key={catName} className="space-y-4">
@@ -159,7 +164,8 @@ const Index = () => {
                     ดูทั้งหมด →
                   </Link>
                 </div>
-                <ProductGrid products={products.slice(0, 10)} isLoading={false} />
+                {/* Randomize product order within category for uniqueness */}
+                <ProductGrid products={[...products].sort(() => Math.random() - 0.5).slice(0, 10)} isLoading={false} />
               </div>
             ))}
           </div>
@@ -168,8 +174,12 @@ const Index = () => {
             {/* Tabs: Grid vs Compare */}
             <Tabs defaultValue="grid">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-primary">
-                  {activeKeyword ? `ผลการค้นหา "${activeKeyword}"` : "สินค้าแนะนำสำหรับคุณ"}
+                <h2 className="text-xl font-bold text-primary flex items-center gap-2">
+                  {activeKeyword ? (
+                    `ผลการค้นหา "${activeKeyword}"`
+                  ) : (
+                    <><Sparkles className="h-5 w-5 text-accent" /> สินค้าแนะนำสำหรับคุณ</>
+                  )}
                 </h2>
                 <div className="flex items-center gap-3">
                   {data && (
