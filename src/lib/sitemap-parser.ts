@@ -3,46 +3,72 @@ import { getAdminSettings } from "@/lib/store";
 import { buildCloakedUrl } from "./url-builder";
 
 /**
- * Sitemap Parser (Lazada Optimized v3 - Server-Side Simulation & Persistent Cache)
+ * Sitemap Parser (Lazada Optimized v4 - Multi-Proxy & Robust Parsing)
  */
 
-const SITEMAP_CACHE_KEY = "lazada-sitemap-cache-v3";
-const SITEMAP_URL_KEY = "lazada-sitemap-url-v3";
+const SITEMAP_CACHE_KEY = "lazada-sitemap-cache-v4";
+const SITEMAP_URL_KEY = "lazada-sitemap-url-v4";
 
-// ฟังก์ชันสำหรับดึงข้อมูลและเก็บลง Cache (เรียกใช้เมื่อกดบันทึกใน Admin หรือเมื่อไม่มีข้อมูล)
+// รายชื่อ Proxy ที่จะใช้สลับกันเมื่อตัวใดตัวหนึ่งล้มเหลว
+const PROXY_LIST = [
+  (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+
 export async function refreshSitemapCache(url: string): Promise<void> {
   if (!url) return;
   
-  try {
-    // ใช้ Proxy ดึงข้อมูล (ในระบบจริงส่วนนี้ควรทำที่ Server-side)
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl);
-    if (!response.ok) throw new Error("Network response was not ok");
-    
-    const json = await response.json();
-    const xmlText = json.contents;
-    
-    if (!xmlText) throw new Error("No content from proxy");
+  let xmlText = "";
+  let error: any = null;
 
+  // ลองใช้ Proxy ทีละตัวจนกว่าจะสำเร็จ
+  for (const getProxyUrl of PROXY_LIST) {
+    try {
+      const proxyUrl = getProxyUrl(url);
+      const response = await fetch(proxyUrl);
+      if (!response.ok) continue;
+      
+      // AllOrigins จะส่งมาเป็น JSON ที่มีฟิลด์ contents
+      if (proxyUrl.includes("allorigins")) {
+        const json = await response.json();
+        xmlText = json.contents;
+      } else {
+        xmlText = await response.text();
+      }
+
+      if (xmlText && xmlText.includes("<urlset")) break;
+    } catch (e) {
+      error = e;
+      continue;
+    }
+  }
+
+  if (!xmlText) {
+    throw error || new Error("ไม่สามารถดึงข้อมูลจาก Sitemap ได้ (CORS/Network Error)");
+  }
+
+  try {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlText, "text/xml");
     const locs = Array.from(xmlDoc.getElementsByTagName("loc"));
 
     if (locs.length > 0) {
       const settings = getAdminSettings();
-      // ดึง 1000 รายการเพื่อความครอบคลุม
+      // ดึง 1000 รายการแรก
       const products = locs.slice(0, 1000).map((locNode, index) => 
         createProductFromLoc(locNode.textContent || "", index, settings)
       );
       
-      // บันทึกลง Cache (ใช้ระบบที่เสถียรกว่า LocalStorage ถ้าเป็นไปได้ แต่ในที่นี้ใช้ LocalStorage เป็นตัวแทน)
       localStorage.setItem(SITEMAP_CACHE_KEY, JSON.stringify(products));
       localStorage.setItem(SITEMAP_URL_KEY, url);
       console.log(`Sitemap cached: ${products.length} products`);
+    } else {
+      throw new Error("ไม่พบรายการสินค้าใน Sitemap XML");
     }
-  } catch (error) {
-    console.error("Failed to refresh sitemap cache:", error);
-    throw error;
+  } catch (e) {
+    console.error("XML Parsing error:", e);
+    throw new Error("รูปแบบไฟล์ XML ไม่ถูกต้อง");
   }
 }
 
@@ -59,8 +85,6 @@ export async function fetchSitemapProducts(params: {
   }
 
   let products: Product[] = [];
-  
-  // 1. ดึงจาก Cache ทันที (Instant Load)
   const cachedData = localStorage.getItem(SITEMAP_CACHE_KEY);
   const cachedUrl = localStorage.getItem(SITEMAP_URL_KEY);
   
@@ -72,15 +96,12 @@ export async function fetchSitemapProducts(params: {
     }
   }
 
-  // 2. ถ้าไม่มี Cache ให้ดึงใหม่ในพื้นหลัง (Background Fetch)
+  // ถ้าไม่มี Cache ให้ดึงใหม่ในพื้นหลัง
   if (products.length === 0) {
-    // แสดง Mock ไปก่อนเพื่อให้หน้าเว็บไม่ว่าง
     products = generateMockLazadaProducts(settings);
-    // ดึงข้อมูลจริงมาเก็บไว้ใช้ครั้งหน้า
     refreshSitemapCache(sitemapUrl).catch(console.error);
   }
 
-  // 3. กรองข้อมูลตาม Keyword
   let filtered = products;
   if (params.keyword) {
     const kw = params.keyword.toLowerCase();
@@ -109,20 +130,20 @@ export function getSitemapProductById(id: string, slug?: string): Product | null
     } catch {}
   }
 
-  // ถ้าไม่เจอใน Cache ให้สร้างข้อมูลจาก Slug ทันที (Deep Link)
   if (slug) {
     const settings = getAdminSettings();
-    let name = slug.split('-').slice(1).join(' ').replace(/\.html$/, '');
-    if (!name || name === "product") name = "สินค้าจาก Lazada";
+    // ดึงชื่อจาก Slug: item-name-i12345.html -> item name
+    let name = slug.split('-i')[0] || "สินค้าจาก Lazada";
+    name = decodeURIComponent(name.replace(/-/g, ' '));
     
     const originalUrl = `https://www.lazada.co.th/products/${slug}`;
     
     return {
       product_id: id,
-      product_name: decodeURIComponent(name),
+      product_name: name,
       product_picture: `https://picsum.photos/seed/${id}/600/600`,
       product_other_pictures: "",
-      product_price: 1590, // Default price for deep links
+      product_price: 1590,
       product_discounted: 1290,
       product_discounted_percentage: 19,
       product_currency: "THB",
@@ -143,6 +164,7 @@ function createProductFromLoc(loc: string, index: number, settings: any): Produc
   const urlParts = loc.split('/');
   const lastPart = urlParts[urlParts.length - 1] || "";
   
+  // Lazada URL format: https://www.lazada.co.th/products/item-name-i12345.html
   let name = lastPart.split('-i')[0] || "Product";
   name = decodeURIComponent(name.replace(/-/g, ' ').replace(/\.html$/, ''));
   
