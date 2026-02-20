@@ -21,6 +21,7 @@ import {
   type Product,
 } from "@/lib/api";
 import { fetchCsvProducts } from "@/lib/csv-products";
+import { fetchSitemapProducts, getSitemapProductById } from "@/lib/sitemap-parser";
 import { getAdminSettings } from "@/lib/store";
 import { addRecentlyViewed } from "@/lib/wishlist";
 import { extractIdFromSlug } from "@/lib/slug";
@@ -48,7 +49,17 @@ export default function ProductDetail() {
   useEffect(() => {
     if (!id || (product && product.product_id === id)) return;
 
-    // Try cache first
+    // 1. ลองดึงจาก Cache ของ Sitemap ก่อนถ้าใช้แหล่งข้อมูล Sitemap
+    if (settings.dataSource === "sitemap") {
+      const sitemapProduct = getSitemapProductById(id);
+      if (sitemapProduct) {
+        setProduct(sitemapProduct);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // 2. ลองดึงจาก Cache ทั่วไป
     const cached = getCachedProduct(id);
     if (cached) {
       setProduct(cached);
@@ -56,13 +67,16 @@ export default function ProductDetail() {
       return;
     }
 
-    // Fetch from correct data source
+    // 3. ดึงจากแหล่งข้อมูลที่ถูกต้อง
     setLoading(true);
-    const fetchFn = settings.dataSource === "csv" 
-      ? () => fetchCsvProducts({ limit: 100, page: 1 })
-      : () => fetchProducts({ limit: 100, page: 1 });
+    
+    const getFetchFn = () => {
+      if (settings.dataSource === "sitemap") return fetchSitemapProducts({ limit: 1000 });
+      if (settings.dataSource === "csv") return fetchCsvProducts({ limit: 100, page: 1 });
+      return fetchProducts({ limit: 100, page: 1 });
+    };
 
-    fetchFn()
+    getFetchFn()
       .then((res) => {
         const found = res.data.find((p) => p.product_id === id);
         setProduct(found || null);
@@ -116,7 +130,6 @@ export default function ProductDetail() {
   const displayName = settings.enablePrefixWords
     ? getPrefixedName(product.product_id, product.product_name)
     : product.product_name;
-  const siteName = settings.siteName || "ThaiDeals";
 
   const images = [product.product_picture];
   if (product.product_other_pictures) {
@@ -293,68 +306,25 @@ export default function ProductDetail() {
                   ]
                 : []),
             ].map((item) => (
-              <div key={item.label} className="flex justify-between border-b pb-2 sm:block sm:border-0 sm:pb-0">
-                <p className="text-muted-foreground text-xs">{item.label}</p>
-                <p className="font-medium text-card-foreground">{item.value}</p>
+              <div key={item.label} className="flex justify-between border-b pb-2 sm:border-0 sm:pb-0">
+                <span className="text-muted-foreground">{item.label}:</span>
+                <span className="font-medium text-right ml-4">{item.value}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Fake Compare Table */}
+        {/* Compare Table */}
         <FakeCompareTable product={product} />
 
-        {/* Reviews Section */}
-        <div className="space-y-6">
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold">
-              รีวิวจากผู้ซื้อ ({reviews.length})
-            </h2>
-            <div className="space-y-3">
-              {reviews.map((review) => (
-                <div
-                  key={review.id}
-                  className="rounded-xl border bg-card p-4 space-y-2 animate-fade-in"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-sm">{review.name}</span>
-                    <span className="text-xs text-muted-foreground">{review.date}</span>
-                  </div>
-                  <div className="flex">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <Star
-                        key={i}
-                        className={`h-4 w-4 ${
-                          i <= review.rating
-                            ? "fill-star text-star"
-                            : "fill-muted text-muted"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <p className="text-sm text-card-foreground">{review.comment}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* AI Reviews */}
+        {settings.enableAiReviews && (
+          <AiReviews productId={product.product_id} productName={displayName} />
+        )}
 
-          {/* AI Reviews */}
-          {settings.enableAiReviews && (
-            <AiReviews
-              productName={product.product_name}
-              categoryName={product.category_name}
-              price={currentPrice}
-              currency={product.product_currency}
-            />
-          )}
-        </div>
         {/* Related Products */}
-        <RelatedProducts product={product} />
+        <RelatedProducts currentProductId={product.product_id} categoryName={product.category_name} />
       </main>
-
-      <footer className="border-t py-6 text-center text-sm text-muted-foreground">
-        © 2026 {siteName} — สินค้าดีลพิเศษ
-      </footer>
     </div>
   );
 }

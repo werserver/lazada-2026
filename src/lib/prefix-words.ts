@@ -1,21 +1,4 @@
-// Persuasive prefix words to add before product names
-const PREFIXES = [
-  "ถูกที่สุด",
-  "ลดราคา",
-  "ส่วนลดพิเศษ",
-  "ขายดี",
-  "แนะนำ",
-  "คุ้มสุดๆ",
-  "ราคาดี",
-  "โปรโมชั่น",
-  "สุดคุ้ม",
-  "ห้ามพลาด",
-  "ราคาถูก",
-  "ดีลเด็ด",
-  "ลดแรง",
-  "ยอดนิยม",
-  "ราคาพิเศษ",
-];
+import { getAdminSettings } from "./store";
 
 // Deterministic random based on product ID
 function hashCode(str: string): number {
@@ -27,10 +10,14 @@ function hashCode(str: string): number {
 }
 
 export function getPrefix(productId: string): string {
-  const idx = hashCode(productId) % PREFIXES.length;
-  return PREFIXES[idx];
+  const settings = getAdminSettings();
+  if (!settings.enablePrefixWords || !settings.prefixWords.length) return "";
+  
+  const idx = hashCode(productId) % settings.prefixWords.length;
+  return settings.prefixWords[idx];
 }
 
 export function getPrefixedName(productId: string, name: string): string {
-  return `${getPrefix(productId)} ${name}`;
+  const prefix = getPrefix(productId);
+  return prefix ? `${prefix} ${name}` : name;
 }

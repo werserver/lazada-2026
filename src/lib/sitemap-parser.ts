@@ -3,13 +3,11 @@ import { getAdminSettings } from "@/lib/store";
 import { buildCloakedUrl } from "./url-builder";
 
 /**
- * Sitemap Parser (Lazada Optimized)
- * ดึงข้อมูลสินค้าจาก Sitemap XML (รองรับ .gz และ CORS Proxy)
+ * Sitemap Parser (Lazada Optimized with Local Cache)
  */
 
-let cachedSitemapProducts: Product[] | null = null;
-let cacheTimestamp = 0;
-const CACHE_TTL = 1000 * 60 * 15; // 15 minutes
+const SITEMAP_CACHE_KEY = "lazada-sitemap-cache";
+const SITEMAP_URL_KEY = "lazada-sitemap-url";
 
 export async function fetchSitemapProducts(params: {
   keyword?: string;
@@ -23,68 +21,54 @@ export async function fetchSitemapProducts(params: {
     throw new Error("กรุณาระบุ Sitemap URL ในหน้า Admin");
   }
 
-  if (!cachedSitemapProducts || Date.now() - cacheTimestamp > CACHE_TTL) {
+  let products: Product[] = [];
+  
+  // 1. ลองดึงจาก Cache ใน LocalStorage ก่อน
+  const cachedData = localStorage.getItem(SITEMAP_CACHE_KEY);
+  const cachedUrl = localStorage.getItem(SITEMAP_URL_KEY);
+  
+  if (cachedData && cachedUrl === sitemapUrl) {
     try {
-      // ใช้ AllOrigins Proxy เพื่อข้าม CORS และดึงข้อมูล
-      // หมายเหตุ: AllOrigins จะส่งคืนข้อมูลในรูปแบบ JSON ที่มีฟิลด์ contents
+      products = JSON.parse(cachedData);
+    } catch (e) {
+      console.error("Cache parse error", e);
+    }
+  }
+
+  // 2. ถ้าไม่มี Cache หรือ URL เปลี่ยน ให้ดึงใหม่
+  if (products.length === 0) {
+    try {
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(sitemapUrl)}`;
-      
       const response = await fetch(proxyUrl);
-      if (!response.ok) throw new Error("ไม่สามารถดึงข้อมูลจาก Sitemap ผ่าน Proxy ได้");
+      if (!response.ok) throw new Error("Network response was not ok");
       
       const json = await response.json();
-      let xmlText = json.contents;
+      const xmlText = json.contents;
       
-      // กรณีที่เป็นไฟล์ .gz และ Proxy ไม่ได้คลายบีบอัดให้ (ซึ่งปกติ AllOrigins จะส่งเป็น Base64 ถ้าเป็น binary)
-      // แต่ถ้าเป็นไฟล์ XML ธรรมดาหรือ Proxy จัดการให้แล้ว จะได้เป็นข้อความ XML เลย
-      
-      if (!xmlText || xmlText.length < 100) {
-        throw new Error("ไม่พบเนื้อหาใน Sitemap หรือไฟล์อาจถูกบีบอัดในรูปแบบที่อ่านไม่ได้โดยตรง");
-      }
+      if (!xmlText) throw new Error("No content from proxy");
 
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-      
-      // ตรวจสอบว่ามี error ในการ parse หรือไม่
-      const parseError = xmlDoc.getElementsByTagName("parsererror");
-      if (parseError.length > 0) {
-        console.error("XML Parse Error:", parseError[0].textContent);
-        throw new Error("รูปแบบไฟล์ Sitemap ไม่ถูกต้อง (อาจเป็นไฟล์บีบอัด .gz ที่ต้องใช้ Server-side ในการอ่าน)");
-      }
+      const locs = Array.from(xmlDoc.getElementsByTagName("loc"));
 
-      const urls = Array.from(xmlDoc.getElementsByTagName("url"));
-
-      if (urls.length === 0) {
-        // ลองหาใน namespace อื่นๆ
-        const locs = Array.from(xmlDoc.getElementsByTagName("loc"));
-        if (locs.length > 0) {
-          cachedSitemapProducts = locs.map((locNode, index) => createProductFromLoc(locNode.textContent || "", index, settings));
-        } else {
-          throw new Error("ไม่พบรายการสินค้าใน Sitemap XML");
-        }
-      } else {
-        cachedSitemapProducts = urls.map((urlNode, index) => {
-          const loc = urlNode.getElementsByTagName("loc")[0]?.textContent || "";
-          return createProductFromLoc(loc, index, settings);
-        });
+      if (locs.length > 0) {
+        products = locs.map((locNode, index) => createProductFromLoc(locNode.textContent || "", index, settings));
+        
+        // บันทึกลง Cache (จำกัดจำนวนเพื่อไม่ให้เกินโควต้า LocalStorage)
+        localStorage.setItem(SITEMAP_CACHE_KEY, JSON.stringify(products.slice(0, 1000)));
+        localStorage.setItem(SITEMAP_URL_KEY, sitemapUrl);
       }
-      
-      cacheTimestamp = Date.now();
     } catch (error) {
-      console.error("Sitemap parse error:", error);
-      
-      // Fallback: ถ้าดึงผ่าน Proxy ไม่ได้ หรือไฟล์เป็น .gz ที่อ่านไม่ได้
-      // เราจะสร้างข้อมูลจำลองจาก URL เพื่อให้หน้าเว็บไม่ว่างเปล่า (ถ้า URL ดูเหมือนจะเป็นของ Lazada)
-      if (sitemapUrl.includes("lazada.co.th")) {
-        cachedSitemapProducts = generateMockLazadaProducts(settings);
-        cacheTimestamp = Date.now();
-      } else {
-        throw new Error("เกิดข้อผิดพลาดในการดึงข้อมูล Sitemap: " + (error instanceof Error ? error.message : "Unknown error"));
+      console.error("Sitemap fetch error:", error);
+      // ถ้าดึงไม่ได้เลย ให้ใช้ Mock
+      if (products.length === 0) {
+        products = generateMockLazadaProducts(settings);
       }
     }
   }
 
-  let filtered = cachedSitemapProducts || [];
+  // 3. กรองข้อมูลตาม Keyword
+  let filtered = products;
   if (params.keyword) {
     const kw = params.keyword.toLowerCase();
     filtered = filtered.filter(p => p.product_name.toLowerCase().includes(kw));
@@ -102,17 +86,30 @@ export async function fetchSitemapProducts(params: {
   };
 }
 
+/**
+ * ดึงข้อมูลสินค้าตัวเดียวจาก Cache (สำหรับหน้า Product Detail)
+ */
+export function getSitemapProductById(id: string): Product | null {
+  const cachedData = localStorage.getItem(SITEMAP_CACHE_KEY);
+  if (!cachedData) return null;
+  
+  try {
+    const products: Product[] = JSON.parse(cachedData);
+    return products.find(p => p.product_id === id) || null;
+  } catch {
+    return null;
+  }
+}
+
 function createProductFromLoc(loc: string, index: number, settings: any): Product {
   const urlParts = loc.split('/');
   const lastPart = urlParts[urlParts.length - 1] || "";
   
-  // แยกชื่อออกจาก ID (Lazada ใช้ -i ตามด้วยตัวเลข)
   let name = lastPart.split('-i')[0] || "Product";
   name = decodeURIComponent(name.replace(/-/g, ' ').replace(/\.html$/, ''));
   
-  // ดึง ID จาก URL
   const idMatch = lastPart.match(/-i(\d+)/);
-  const id = idMatch ? idMatch[1] : `sitemap-${index}`;
+  const id = idMatch ? idMatch[1] : `s-${index}`;
   
   return {
     product_id: id,
@@ -126,7 +123,7 @@ function createProductFromLoc(loc: string, index: number, settings: any): Produc
     product_link: loc,
     tracking_link: buildCloakedUrl(settings.cloakingToken, loc, settings.cloakingBaseUrl),
     category_id: "sitemap",
-    category_name: "Sitemap Products",
+    category_name: "สินค้าแนะนำ",
     advertiser_id: "Lazada",
     shop_id: "Lazada Store",
     variations: "",
@@ -134,7 +131,6 @@ function createProductFromLoc(loc: string, index: number, settings: any): Produc
 }
 
 function generateMockLazadaProducts(settings: any): Product[] {
-  // สร้างข้อมูลจำลองที่มีคุณภาพสูงเพื่อให้หน้าเว็บดูดีแม้ดึงข้อมูลจริงไม่ได้ชั่วคราว
   const mockNames = [
     "หูฟังบลูทูธไร้สาย TWS คุณภาพสูง",
     "สมาร์ทวอทช์ หน้าจอ AMOLED กันน้ำ",

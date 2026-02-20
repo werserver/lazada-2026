@@ -22,7 +22,8 @@ import {
 import {
   X, Plus, Save, Flame, Sparkles, DollarSign, ShoppingCart,
   Clock, CheckCircle, XCircle, LogOut, Settings, BarChart3,
-  Key, Upload, FileSpreadsheet, Database, Tag, Globe, Image as ImageIcon, Map as MapIcon
+  Key, Upload, FileSpreadsheet, Database, Tag, Globe, Image as ImageIcon, Map as MapIcon,
+  Type
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchConversions, type Conversion } from "@/lib/api";
@@ -81,6 +82,7 @@ function SettingsTab() {
   const [settings, setSettings] = useState<AdminSettings>(getAdminSettings);
   const [newCategory, setNewCategory] = useState("");
   const [newKeyword, setNewKeyword] = useState("");
+  const [newPrefix, setNewPrefix] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const categoryFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCategory, setUploadingCategory] = useState("");
@@ -152,6 +154,17 @@ function SettingsTab() {
 
   const removeKeyword = (kw: string) => {
     update({ keywords: settings.keywords.filter((k) => k !== kw) });
+  };
+
+  const addPrefix = () => {
+    const p = newPrefix.trim();
+    if (!p || settings.prefixWords.includes(p)) return;
+    update({ prefixWords: [...settings.prefixWords, p] });
+    setNewPrefix("");
+  };
+
+  const removePrefix = (p: string) => {
+    update({ prefixWords: settings.prefixWords.filter((x) => x !== p) });
   };
 
   const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -394,6 +407,50 @@ function SettingsTab() {
                 className="h-8 text-xs"
               />
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Prefix Words */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Type className="h-5 w-5 text-primary" />
+            คำนำหน้าชื่อสินค้า (Prefix Words)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="space-y-0.5">
+              <Label>เปิดใช้งานคำนำหน้า</Label>
+              <p className="text-xs text-muted-foreground">เพิ่มคำจูงใจหน้าชื่อสินค้าโดยอัตโนมัติ</p>
+            </div>
+            <Switch
+              checked={settings.enablePrefixWords}
+              onCheckedChange={(v) => update({ enablePrefixWords: v })}
+            />
+          </div>
+          
+          <div className="flex gap-2">
+            <Input
+              value={newPrefix}
+              onChange={(e) => setNewPrefix(e.target.value)}
+              placeholder="เพิ่มคำนำหน้า (เช่น ลดแรง, ถูกที่สุด)..."
+              onKeyDown={(e) => e.key === "Enter" && addPrefix()}
+            />
+            <Button onClick={addPrefix} size="icon"><Plus className="h-4 w-4" /></Button>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            {settings.prefixWords.map((p) => (
+              <Badge key={p} variant="secondary" className="gap-1 px-3 py-1">
+                {p}
+                <X
+                  className="h-3 w-3 cursor-pointer hover:text-destructive"
+                  onClick={() => removePrefix(p)}
+                />
+              </Badge>
+            ))}
           </div>
         </CardContent>
       </Card>

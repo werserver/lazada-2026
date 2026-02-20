@@ -9,6 +9,7 @@ export interface AdminSettings {
   apiToken: string;
   categories: string[];
   keywords: string[];
+  prefixWords: string[];
   selectedAdvertisers: string[];
   enableFlashSale: boolean;
   enableAiReviews: boolean;
@@ -26,16 +27,23 @@ export interface AdminSettings {
   categoryCsvFileNames: Record<string, string>;
 }
 
+const DEFAULT_PREFIXES = [
+  "ถูกที่สุด", "ลดราคา", "ส่วนลดพิเศษ", "ขายดี", "แนะนำ", 
+  "คุ้มสุดๆ", "ราคาดี", "โปรโมชั่น", "สุดคุ้ม", "ห้ามพลาด", 
+  "ราคาถูก", "ดีลเด็ด", "ลดแรง", "ยอดนิยม", "ราคาพิเศษ"
+];
+
 function getDefaults(): AdminSettings {
   return {
     dataSource: config.dataSource,
     apiToken: "",
     categories: [...config.categories],
     keywords: [...config.keywords],
+    prefixWords: [...DEFAULT_PREFIXES],
     selectedAdvertisers: [...config.selectedAdvertisers],
     enableFlashSale: config.enableFlashSale,
     enableAiReviews: config.enableAiReviews,
-    enablePrefixWords: false,
+    enablePrefixWords: true,
     defaultCurrency: config.defaultCurrency,
     csvFileName: "",
     cloakingBaseUrl: "",
