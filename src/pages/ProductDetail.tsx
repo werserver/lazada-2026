@@ -19,7 +19,7 @@ import {
   formatPrice,
   type Product,
 } from "@/lib/api";
-import { fetchCsvProducts } from "@/lib/csv-products";
+import { fetchCsvProducts, fetchProductById } from "@/lib/csv-products";
 import { fetchSitemapProducts, getSitemapProductById } from "@/lib/sitemap-parser";
 import { getAdminSettings } from "@/lib/store";
 import { addRecentlyViewed } from "@/lib/wishlist";
@@ -53,17 +53,22 @@ export default function ProductDetail() {
       let found: Product | null = null;
 
       try {
-        // 1. ลองดึงจาก Sitemap Cache ก่อน (Deep Link Support)
-        if (settings.dataSource === "sitemap") {
+        // 1. ลองดึงจาก CSV Global Search (High Priority for Mass Site)
+        if (settings.dataSource === "csv") {
+          found = await fetchProductById(id);
+        }
+
+        // 2. ลองดึงจาก Sitemap Cache
+        if (!found && settings.dataSource === "sitemap") {
           found = getSitemapProductById(id, slug);
         }
 
-        // 2. ถ้ายังไม่เจอ ลองดึงจาก Cache ทั่วไป
+        // 3. ถ้ายังไม่เจอ ลองดึงจาก Cache ทั่วไป
         if (!found) {
           found = getCachedProduct(id);
         }
 
-        // 3. ถ้ายังไม่เจออีก ให้ดึงจากแหล่งข้อมูลจริง
+        // 4. ถ้ายังไม่เจออีก ให้ดึงจากแหล่งข้อมูลจริง
         if (!found) {
           const getFetchFn = () => {
             if (settings.dataSource === "sitemap") return fetchSitemapProducts({ limit: 1000 });

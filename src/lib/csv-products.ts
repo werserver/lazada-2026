@@ -173,6 +173,11 @@ export async function fetchCsvProducts(params: {
   };
 }
 
+export async function fetchProductById(id: string): Promise<Product | null> {
+  const allProducts = await loadCsvProducts();
+  return allProducts.find(p => p.product_id === id) || null;
+}
+
 export function clearCsvCache() {
   cachedProducts = null;
   cacheTimestamp = 0;
