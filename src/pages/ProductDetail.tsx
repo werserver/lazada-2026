@@ -49,12 +49,19 @@ export default function ProductDetail() {
   useEffect(() => {
     if (!id || (product && product.product_id === id)) return;
 
-    // 1. ลองดึงจาก Cache ของ Sitemap ก่อนถ้าใช้แหล่งข้อมูล Sitemap
+    // 1. ลองดึงจาก Cache ของ Sitemap ก่อนถ้าใช้แหล่งข้อมูล Sitemap (Deep Link Support)
     if (settings.dataSource === "sitemap") {
-      const sitemapProduct = getSitemapProductById(id);
+      const sitemapProduct = getSitemapProductById(id, slug);
       if (sitemapProduct) {
         setProduct(sitemapProduct);
         setLoading(false);
+        // ถ้าเป็นข้อมูลเบื้องต้น (Deep Link) ให้ลองโหลดข้อมูลจริงในพื้นหลัง
+        if (sitemapProduct.product_price === 0) {
+          fetchSitemapProducts({ limit: 1000 }).then(res => {
+            const realProduct = res.data.find(p => p.product_id === id);
+            if (realProduct) setProduct(realProduct);
+          });
+        }
         return;
       }
     }
@@ -83,7 +90,7 @@ export default function ProductDetail() {
       })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
-  }, [id, product, settings.dataSource]);
+  }, [id, slug, product, settings.dataSource]);
 
   if (loading) {
     return (
@@ -124,7 +131,6 @@ export default function ProductDetail() {
   addRecentlyViewed(product);
 
   const { rating, reviewCount } = getProductRating(product.product_id);
-  const reviews = getProductReviews(product.product_id);
   const hasDiscount = product.product_discounted_percentage > 0;
   const currentPrice = hasDiscount ? product.product_discounted : product.product_price;
   const displayName = settings.enablePrefixWords
@@ -218,7 +224,7 @@ export default function ProductDetail() {
             <div className="space-y-1">
               <div className="flex items-baseline gap-3">
                 <span className="text-3xl font-bold text-primary">
-                  {formatPrice(currentPrice, product.product_currency)}
+                  {currentPrice > 0 ? formatPrice(currentPrice, product.product_currency) : "กำลังโหลดราคา..."}
                 </span>
                 {hasDiscount && (
                   <>
@@ -298,7 +304,7 @@ export default function ProductDetail() {
               { label: "ชื่อสินค้า", value: displayName },
               { label: "หมวดหมู่", value: product.category_name },
               { label: "ร้านค้า", value: product.shop_id },
-              { label: "ราคาปกติ", value: formatPrice(product.product_price, product.product_currency) },
+              { label: "ราคาปกติ", value: product.product_price > 0 ? formatPrice(product.product_price, product.product_currency) : "กำลังโหลด..." },
               ...(hasDiscount
                 ? [
                     { label: "ราคาพิเศษ", value: formatPrice(product.product_discounted, product.product_currency) },
